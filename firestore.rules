@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --------------------------------------------------------------
+    // users/{uid}
+    // - Cada usuário só pode ler/escrever o próprio documento.
+    // - Os campos "role" e "suspended" só podem ser alterados por quem
+    //   já é admin — um usuário comum não consegue se autopromover nem
+    //   desfazer a própria suspensão, mesmo manipulando a requisição
+    //   diretamente (a regra é validada no servidor, não confia no
+    //   cliente). O bloqueio real (Firebase Auth "disabled") é ainda
+    //   mais forte: nem chega a depender deste documento.
+    // - "list" (listar todos os usuários) só é permitido para admin —
+    //   usado pelo painel administrativo (UserListManager.tsx).
+    // --------------------------------------------------------------
+    match /users/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(uid) && request.resource.data.role == 'user';
+      allow update: if isOwner(uid) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.get('suspended', false) == resource.data.get('suspended', false) &&
+        request.resource.data.get('blocked', false) == resource.data.get('blocked', false);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --------------------------------------------------------------
+    // broadcasts/{id}
+    // - Mensagens gerais (sem targetUids, ou null) -> visíveis a
+    //   qualquer usuário logado.
+    // - Mensagens direcionadas (targetUids contém uids específicos) ->
+    //   só o próprio destinatário consegue ler aquele documento
+    //   específico. Isso é verificado no SERVIDOR, por documento — não
+    //   basta a tela do app "esconder" visualmente uma mensagem alheia,
+    //   o Firestore em si já nega o acesso ao dado bruto.
+    // - Admin sempre pode ler tudo (histórico/auditoria).
+    // --------------------------------------------------------------
+    match /broadcasts/{id} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          !("targetUids" in resource.data) ||
+          resource.data.targetUids == null ||
+          resource.data.targetUids.size() == 0 ||
+          request.auth.uid in resource.data.targetUids
+        )
+      );
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --------------------------------------------------------------
+    // ads/{adId}
+    // - Leitura exige login (o app inteiro é autenticado).
+    // - Escrita (criar/editar/excluir) exige role "admin".
+    // --------------------------------------------------------------
+    match /ads/{adId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // --------------------------------------------------------------
+    // systemStatus/{source}
+    // - Status real de disponibilidade das fontes de dado (INMET,
+    //   Open-Meteo), gravado só pelo servidor (Service Account, que
+    //   ignora estas regras) em functions/_shared/systemStatus.ts.
+    // - Só admin pode ler — informação operacional interna, não
+    //   relevante nem exposta ao usuário final.
+    // --------------------------------------------------------------
+    match /systemStatus/{source} {
+      allow read: if isAdmin();
+      allow write: if false; // só o servidor (Service Account) escreve
+    }
+
+    // --------------------------------------------------------------
+    // Camada extra de defesa: nega explicitamente qualquer coleção não
+    // listada acima. O Firestore já nega por padrão nesse caso, mas
+    // deixamos explícito para não depender desse comportamento implícito
+    // caso uma coleção nova seja criada no futuro sem regra própria.
+    // --------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

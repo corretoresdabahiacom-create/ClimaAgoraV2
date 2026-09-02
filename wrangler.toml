@@ -1,0 +1,9 @@
+name = "climaagora-v2"
+compatibility_date = "2026-08-24"
+
+# Observacao: "pages_build_output_dir" foi removido de proposito deste
+# arquivo. Ele e necessario apenas para "wrangler pages deploy" via linha
+# de comando -- como o deploy e feito pelo painel do Cloudflare (conectado
+# ao GitHub, com o campo "Build output directory" configurado la como
+# "dist"), essa linha aqui so causaria conflito com o modo de
+# desenvolvimento local via proxy ("wrangler pages dev -- npm run dev").

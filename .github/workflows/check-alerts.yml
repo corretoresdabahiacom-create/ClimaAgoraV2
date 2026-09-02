@@ -1,0 +1,17 @@
+name: Verificar alertas do INMET e notificar usuários
+
+on:
+  schedule:
+    # Roda a cada 20 minutos. Sintaxe cron: minuto hora dia mês dia-da-semana
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {} # permite disparar manualmente pela aba Actions do GitHub, para testar
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    environment: CRON_SECRET
+    steps:
+      - name: Chamar a Function de verificação
+        run: |
+          curl --fail --silent --show-error \
+            "https://climaagorav2.pages.dev/api/check-and-notify-alerts?secret=${{ secrets.CRON_SECRET }}"
