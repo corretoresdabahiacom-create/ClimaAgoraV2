@@ -55,7 +55,7 @@ export function AdminScreen({ currentUser, onBack }: Props) {
   return (
     <div className="sky-clear-night sky-vignette relative min-h-dvh pb-10">
       <div className="w-full max-w-md mx-auto">
-      <div className="relative flex items-center gap-3 px-5 pt-4">
+      <div className="relative flex items-center gap-3 px-5 pt-8">
         <button onClick={onBack} className="glass rounded-full p-2" aria-label="Voltar">
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -122,13 +122,6 @@ function TabButton({
   );
 }
 
-// ------------------------------------------------------------------
-// Dashboard — contagens REAIS, lidas diretamente do Firestore.
-// "Online agora" = pulsação (heartbeat) nos últimos 60s (ver
-// useHeartbeat.ts) — dado real, não estimado, atualizado em tempo real
-// via onSnapshot.
-// "Ativo nos últimos 7 dias" = mesmo campo lastActiveAt, janela maior.
-// ------------------------------------------------------------------
 function DashboardTab({
   onSelectSegment,
 }: {
@@ -145,8 +138,6 @@ function DashboardTab({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Snapshot em tempo real da coleção inteira de usuários — permitido
-    // apenas para admin, conforme firestore.rules ("allow list: if isAdmin()").
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const now = Date.now();
       const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -163,8 +154,6 @@ function DashboardTab({
           if (now - ms < weekMs) week++;
           if (now - ms >= inactive30Ms) inactive++;
         } else {
-          // Nunca teve atividade registrada -> conta como inativo também
-          // (nunca fingimos que "sem dado" significa "ativo").
           inactive++;
         }
       });
@@ -179,10 +168,6 @@ function DashboardTab({
       setTotalAds(snap.docs.filter((d) => d.data().active && !d.data().deletedAt).length);
     });
 
-    // Status real das fontes de dado (gravado pela própria Function
-    // /api/weather quando detecta falha ou recuperação — ver
-    // functions/_shared/systemStatus.ts). Documento só existe depois da
-    // primeira falha real já detectada; sem falha ainda = "sem dado".
     const unsubStatus = onSnapshot(collection(db, "systemStatus"), (snap) => {
       setSourceStatus((prev) => {
         const next = { ...prev };
@@ -304,9 +289,6 @@ function StatCard({
   );
 }
 
-// ------------------------------------------------------------------
-// Gestão de anúncios — texto, banner ou misto (imagem+texto+link)
-// ------------------------------------------------------------------
 function AdsManager({ currentUser }: { currentUser: AppUser }) {
   const [ads, setAds] = useState<Advertisement[]>([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -350,12 +332,6 @@ function AdsManager({ currentUser }: { currentUser: AppUser }) {
     await updateDoc(doc(db, "ads", ad.id), { active: !ad.active });
   }
 
-  // NOTA IMPORTANTE: usávamos window.confirm() aqui antes, mas esse
-  // diálogo nativo do navegador é conhecido por falhar silenciosamente
-  // (nunca aparece, e a função simplesmente retorna sem fazer nada) em
-  // apps PWA rodando em modo "standalone" (instalado na tela inicial) —
-  // exatamente o modo que habilitamos para este app. Por isso, a
-  // confirmação agora é feita com um estado próprio, dentro da UI.
   async function removeAd(id: string) {
     await updateDoc(doc(db, "ads", id), { active: false, deletedAt: new Date().toISOString() });
     setConfirmDeleteId(null);
@@ -507,16 +483,6 @@ function Input({
   );
 }
 
-// ------------------------------------------------------------------
-// Notificar cadastrados — grava um "broadcast" real no Firestore, que
-// todo usuário logado passa a ver como um banner na Home (NewsPanel-like).
-// IMPORTANTE: isto é uma notificação DENTRO DO APP (in-app), visível
-// quando o usuário abre o app. NÃO é uma push notification que acorda o
-// celular com o app fechado — isso exigiria configurar o Firebase Cloud
-// Messaging (chave VAPID, service worker, permissão do navegador), que é
-// uma etapa adicional separada. Deixo isso registrado para não sugerir
-// uma capacidade que ainda não existe.
-// ------------------------------------------------------------------
 function BroadcastManager({ currentUser }: { currentUser: AppUser }) {
   const [mode, setMode] = useState<"all" | "select">("all");
   const [message, setMessage] = useState("");
@@ -621,10 +587,3 @@ function BroadcastManager({ currentUser }: { currentUser: AppUser }) {
     </div>
   );
 }
-
-// ------------------------------------------------------------------
-// Gestão de usuários agora usa UserListManager (ver componente próprio)
-// — a promoção de admin continua manual via Firestore Console, por
-// design, para reduzir a superfície de risco (não é um botão de um
-// clique no app).
-// ------------------------------------------------------------------
